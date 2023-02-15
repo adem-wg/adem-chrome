@@ -136,7 +136,7 @@ class Claim {
     }
 
     for (const ai of this.constraints.ass) {
-      if (ai.subsumes(ip)) {
+      if (ai.moreGeneralThan(ip)) {
         return true;
       }
     }

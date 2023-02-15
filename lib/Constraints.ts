@@ -25,7 +25,6 @@ export class AI {
       } catch {
         this.constraint = ipaddr.parse(ipMatch[1]);
       }
-      console.log(`${from} => ${this.constraint}`);
       if (ipMatch[2] !== undefined) {
         this.port = parseInt(ipMatch[2]);
       }
@@ -34,20 +33,35 @@ export class AI {
     }
   }
 
-  subsumes(ai: AI | IP): boolean {
+  moreGeneralThan(ai: AI | IP): boolean {
     const constraint = ai instanceof AI ? ai.constraint : ai;
     if (constraint instanceof URL || this.constraint instanceof URL) {
       throw new UnsupportedError();
-    } else if (constraint instanceof Array) {
-      return constraint[0].match(this.constraint, constraint[1]);
+    } else if (this.constraint instanceof Array) {
+      if (constraint instanceof Array) {
+        if (this.constraint[1] > constraint[1]) {
+          // If this prefix is longer than the given, it cannot be more general
+          // than the given.
+          return false;
+        } else {
+          return constraint[0].match(this.constraint);
+        }
+      } else {
+        return constraint.match(this.constraint);
+      }
     } else {
-      return constraint.match(this.constraint);
+      if (constraint instanceof Array) {
+        // An address cannot be more general than a prefix
+        return false;
+      } else {
+        return constraint.match(this.constraint, 64);
+      }
     }
   }
 
-  subsumedByAny(ais: AI[]): boolean {
+  anyMoreGeneral(ais: AI[]): boolean {
     for (const ai of ais) {
-      if (ai.subsumes(this)) {
+      if (ai.moreGeneralThan(this)) {
         return true;
       }
     }
@@ -96,7 +110,7 @@ export class ConstraintSet {
 
     // emb will be defined on emblems
     const { constraints } = emblem;
-    if (this.ass !== undefined && !constraints?.ass?.reduce((aggr, v) => aggr && v.subsumedByAny(this.ass as AI []), true)) {
+    if (this.ass !== undefined && !constraints?.ass?.reduce((aggr, v) => aggr && v.anyMoreGeneral(this.ass as AI []), true)) {
       return false;
     }
 
