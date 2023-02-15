@@ -43,7 +43,7 @@ export default function ChainOfTrust(props: ExplanationProps): JSX.Element {
         <Typography>
           Assets marked as protected:
         </Typography>
-        <ul>{(ass as string[]).map((a) => <li key={a}>{a}</li>)}</ul>
+        <ul>{(ass as string[]).map((a) => <li key={a}><Typography>{a}</Typography></li>)}</ul>
       </Item>
       <Item title='Emblem issuer' secondary={issURL.host}>
         <Typography>
@@ -62,10 +62,12 @@ export default function ChainOfTrust(props: ExplanationProps): JSX.Element {
             const extIssURL = new URL(el.payload.iss);
             return (
               <li key={extIssURL.host}>
-                Organization: <Link href={extIssURL.toString()}>
-                  {extIssURL.host}
-                </Link>
-                <br/>
+                <Typography>
+                  Organization: <Link href={extIssURL.toString()}>
+                    {extIssURL.host}
+                  </Link>
+                </Typography>
+                {/* <br/> */}
                 <Typography variant="caption" noWrap={true}>
                   Verification key: <Link href={`https://${el.verificationKID}.adem-configuration.${extIssURL.host}`}>
                     {el.verificationKID}
