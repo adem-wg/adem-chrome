@@ -1,0 +1,19 @@
+{
+  "name": "ADEM DNS Checker",
+  "description": "Checks if websites distribute ADEM emblems over DNS.",
+  "version": "0.4.1",
+  "manifest_version": 3,
+  "permissions": [
+    "activeTab",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
