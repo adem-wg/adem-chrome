@@ -5,7 +5,7 @@ websites provide ADEM emblems via DNS.
 
 ## Installation
 
-1. Download and unpack the the most recent extension from the [releases](/releases) page.
+1. Download and unpack the most recent extension from the [releases](https://github.com/adem-wg/adem-chrome/releases/) page.
 2. Open a Chrome browser (tested with Google Chrome and Edge, should work with Chromium).
 3. Open the extensions settings page (chrome://extensions/ or edge://extensions/).
 4. Turn on developer mode.
