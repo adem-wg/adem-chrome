@@ -5,6 +5,13 @@ websites provide ADEM emblems via DNS.
 
 ## Installation
 
+### From Chrome Webstore
+
+The extension has been published at the [Chrome Webstore](https://chrome.google.com/webstore/detail/adem-dns-checker/ikjidcfbmgnajlnngicipbbekcdflcoi)!
+You can install it as any other extensions in Chrome and Edge.
+
+### Manual
+
 1. Download and unpack the most recent extension from the [releases](https://github.com/adem-wg/adem-chrome/releases/) page.
 2. Open a Chrome browser (tested with Google Chrome and Edge, should work with Chromium).
 3. Open the extensions settings page (chrome://extensions/ or edge://extensions/).
