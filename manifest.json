@@ -1,7 +1,7 @@
 {
   "name": "ADEM DNS Checker",
   "description": "Checks if websites distribute ADEM emblems over DNS.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "manifest_version": 3,
   "permissions": [
     "activeTab",
