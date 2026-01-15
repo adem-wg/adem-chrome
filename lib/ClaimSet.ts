@@ -73,7 +73,7 @@ class ClaimSet {
 
     // Check that it matches all constraints
     for (let endorsement of this.externals.concat(this.internals)) {
-      if ((endorsement.constraints as ConstraintSet).permits(this.emblem)) {
+      if (!(endorsement.constraints as ConstraintSet).permits(this.emblem)) {
         throw new Error('Emblem does not match constraints');
       }
     }
