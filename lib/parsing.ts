@@ -3,9 +3,9 @@ import ClaimSet from './ClaimSet';
 import { DNSResponse } from './util/dns';
 import { allFulfilled, logAndReject } from './util/promise';
 
-const ADEM_R = /adem-(emb|end)(-\w+[\w\d]*)?-(\d+)(-p(\d+))?=(.+)/;
+const ADEM_R = /adem(-.+)?=(.+)/;
 
-function get(map: any, def: any, ...path: string[]): any {
+function get<T>(map: any, def: T, ...path: string[]): T | undefined {
   if (path.length === 0) {
     return undefined;
   }
@@ -25,54 +25,33 @@ function get(map: any, def: any, ...path: string[]): any {
   return iter[lastI];
 }
 
-type SeqMap = { [seq: string]: string[] };
-type IdentSeqMap = { [identifier: string]:SeqMap };
+type IdentMap = { [identifier: string]:string[] };
 
 export function parseTXTs(responses: DNSResponse[]): Promise<ClaimSet[]> {
   const claims = responses.map((rec) => ADEM_R.exec(rec.data))
     .filter((match): match is RegExpExecArray => Boolean(match));
 
-  const partialEmblems: IdentSeqMap = {};
-  const partialEndorsements: IdentSeqMap = {};
+  const tokens: IdentMap = {};
   claims.forEach((claimMatch) => {
-    const [ m, type, identifier, seq, partStr, part, b64 ] = claimMatch;
-    let partial;
-    switch (type) {
-      case 'emb': partial = partialEmblems; break;
-      case 'end': partial = partialEndorsements; break;
-      default: return;
-    }
-    get(partial, [], identifier || '', seq)[parseInt(part || '0')] = b64;
+    const [ _, identifier, b64 ] = claimMatch;
+    get(tokens, [] as string[], identifier || '')?.push(b64);
   });
 
   const sets: Promise<ClaimSet>[] = [];
-  for (const [ident, seqs] of Object.entries(partialEmblems)) {
-    const emblems = Object.values(seqs).map((parts) => NewClaim(parts.join('')));
-    if (emblems.length < 1) {
-      continue;
-    }
-    if (emblems.length > 1) {
-      throw new Error('Can only have one emblem per identifier');
-    }
-    const emblem = logAndReject(emblems[0], (r) => {
-      console.error('could not create emblem');
-      if (r instanceof Error) {
-        console.error(r);
+  for (const [_, seqs] of Object.entries(tokens)) {
+    const claimsP = seqs.map((rawToken) => NewClaim(rawToken));
+    const setP = Promise.all(claimsP).then((claims) => {
+      const emblems = claims.filter((t) => t.headers.cty === 'adem-emb');
+      if (emblems.length !== 1) {
+        throw new Error('multiple emblems found')
       }
-    });
+      const endorsements = claims.filter((t) => t.headers.cty === 'adem-end');
+      console.log(`found ${seqs.length} tokens`)
 
-    const endorsements = Object.values(get(partialEndorsements, {}, ident) as SeqMap)
-      .map((parts) => NewClaim(parts.join('')));
-
-    const endPs = allFulfilled(endorsements, (r) => {
-      console.error('could not create endorsement');
-      if (r instanceof Error) {
-        console.error(r);
-      }
+      return new ClaimSet(emblems[0], endorsements);
     });
-    const setP = Promise.all([emblem, endPs]).then(([emb, endPs]) => new ClaimSet(emb, endPs));
     sets.push(setP);
   }
 
-  return allFulfilled(sets);
+  return allFulfilled(sets, console.log);
 }

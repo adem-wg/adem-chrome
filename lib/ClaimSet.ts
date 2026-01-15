@@ -33,15 +33,15 @@ class ClaimSet {
       }
     }
 
-    let endorsed = this.emblem.verificationKID;
-    while (endorsed !== root?.verificationKID) {
+    let endorsed = this.emblem.headers.jwk.kid;
+    while (endorsed !== root?.headers.jwk.kid) {
       const by = endorsedBy[endorsed as string] as Claim | undefined;
       delete endorsedBy[endorsed as string]; // prevent cycles
       if (by === undefined) {
         break;
       } else {
         this.internals.unshift(by);
-        endorsed = by.verificationKID;
+        endorsed = by.headers.jwk.kid;
       }
     }
 
@@ -62,7 +62,7 @@ class ClaimSet {
       }
     }
 
-    if (this.internals[0].verificationKID !== endorsedPPRootKID) {
+    if (this.internals[0].headers.jwk.kid !== endorsedPPRootKID) {
       throw new Error('PP root is not signed by endorsed key');
     }
 

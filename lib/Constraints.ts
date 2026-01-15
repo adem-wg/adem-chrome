@@ -103,8 +103,8 @@ export class ConstraintSet {
   }
 
   permits(emblem: Claim): boolean {
-    const { ass, nbf, exp } = emblem.payload;
-    if (ass === undefined) {
+    const { assets, nbf, exp } = emblem.payload;
+    if (assets === undefined) {
       throw new Error('Can only check emblems');
     }
 

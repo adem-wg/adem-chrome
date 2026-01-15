@@ -1,13 +1,13 @@
 import { importJWK, JWK, jwtVerify, KeyLike } from 'jose';
 import { Constraints, ConstraintSet, IP } from './Constraints';
 import { checkInclusion } from './ct/api';
-import { calculateKID, readKID } from './keys/hash';
-import { get, put } from './keys/keys';
+import { readKID } from './keys/hash';
+import { isAuthenticated, put } from './keys/keys';
 
 export interface Headers {
   alg: string
-  jwk?: JWK
-  kid?: string
+  jwk: JWK
+  cty: string
 }
 
 export interface LogPointer {
@@ -19,10 +19,10 @@ export interface LogPointer {
 export interface Payload {
   ver: string
   iss: string
-  ass?: string[]
+  assets?: string[]
   sub?: string
   log?: LogPointer[]
-  key?: JWK
+  key?: string
   emb?: Constraints
   iat: number
   nbf: number
@@ -45,9 +45,9 @@ export async function NewClaim(token: string): Promise<Claim> {
   const payload = JSON.parse(window.atob(payloadRaw)) as Payload;
   // What key should be used for verification?
   const isRoot = payload.log !== undefined;
-  const verificationKID = headers.kid || await (isRoot ? calculateKID : readKID)(headers.jwk);
-  const endorses = payload.sub !== undefined ? await readKID(payload.key) : undefined;
-  return new Claim(token, headers, payload, verificationKID, isRoot, endorses);
+  const verificationKID = readKID(headers.jwk);
+  const endorses = payload.sub !== undefined ? payload.key : undefined;
+  return new Claim(token, headers, payload, isRoot, endorses);
 }
 
 /**
@@ -60,8 +60,6 @@ class Claim {
   headers: Headers;
   /** Decoded payload */
   payload: Payload;
-  /** Which key signed this claim? Will be a kid as string. */
-  verificationKID: string;
   /** True if this claim is an endorsement signed by a root key. */
   isRoot: boolean;
   /** Which key is endorsed by this claim? If null, this claim is an emblem. */
@@ -70,18 +68,23 @@ class Claim {
    * When emblem, contains assets marked as protected. */
   constraints?: ConstraintSet;
 
-  constructor(token: string, headers: Headers, payload: Payload, verificationKID: string, isRoot?: boolean, endorses?: string) {
+  constructor(token: string, headers: Headers, payload: Payload, isRoot?: boolean, endorses?: string) {
+    if (headers.jwk === undefined) {
+      throw new Error('no verification key');
+    } else if (headers.jwk.kid === undefined) {
+      throw new Error('header key misses kid');
+    }
+
     this.token = token;
     this.headers = headers;
     this.payload = payload;
     this.isRoot = isRoot !== undefined && isRoot;
-    this.verificationKID = verificationKID;
     if (endorses === undefined) {
-      if (this.payload.ass === undefined) {
+      if (this.payload.assets === undefined) {
         throw new Error('emblem must mark assets');
       }
       this.constraints = new ConstraintSet(
-        Object.assign(this.payload.emb || {}, { ass: this.payload.ass })
+        Object.assign(this.payload.emb || {}, { ass: this.payload.assets })
       );
     } else {
       this.endorses = endorses;
@@ -94,16 +97,11 @@ class Claim {
     // On reject, await jwtVerify will throw
     await jwtVerify(this.token, key as KeyLike);
     if (this.endorses !== undefined) {
-      const k = await importJWK(this.payload.key as JWK, this.payload.key?.alg);
-      await put(this.endorses, k);
+      await put(this.endorses);
     }
   }
 
   async getVerificationKey(): Promise<KeyLike | Uint8Array> {
-    if (this.verificationKID === undefined) {
-      return Promise.reject(new Error('no verification KID given'));
-    }
-
     if (this.isRoot) {
       if (!this.payload.log?.length) {
         throw new Error('root endorsement verification requires log pointers');
@@ -117,14 +115,14 @@ class Claim {
           new URL(this.payload.iss),
           // This assumes that KID was calculated. This invariant is established
           // in verify(...).
-          this.verificationKID as string,
+          this.headers.jwk.kid as string,
         )),
       );
-
-      return importKey(this.headers.jwk);
     } else {
-      return get(this.verificationKID);
+      await isAuthenticated(this.headers.jwk.kid as string);
     }
+
+    return importKey(this.headers.jwk);
   }
 
   async marks(ip: IP): Promise<boolean> {

@@ -35,7 +35,7 @@ export interface ExplanationProps {
 
 export default function ChainOfTrust(props: ExplanationProps): JSX.Element {
   const { claims } = props;
-  const { ass } = claims.emblem.payload;
+  const { assets } = claims.emblem.payload;
   const issURL = new URL(claims.internals[0].payload.iss);
   return (
     <div>
@@ -43,15 +43,15 @@ export default function ChainOfTrust(props: ExplanationProps): JSX.Element {
         <Typography>
           Assets marked as protected:
         </Typography>
-        <ul>{(ass as string[]).map((a) => <li key={a}><Typography>{a}</Typography></li>)}</ul>
+        <ul>{(assets as string[]).map((a) => <li key={a}><Typography>{a}</Typography></li>)}</ul>
       </Item>
       <Item title='Emblem issuer' secondary={issURL.host}>
         <Typography>
           Identity: <Link href={issURL.toString()}>{issURL.host}</Link>
           <br/>
           <Typography variant="caption" noWrap={true}>
-            Verification key: <Link href={`https://${claims.internals[0].verificationKID}.adem-configuration.${issURL.host}`}>
-              {claims.internals[0].verificationKID}
+            Verification key: <Link href={`https://${claims.internals[0].headers.jwk.kid}.adem-configuration.${issURL.host}`}>
+              {claims.internals[0].headers.jwk.kid}
             </Link>
           </Typography>
         </Typography>
@@ -69,8 +69,8 @@ export default function ChainOfTrust(props: ExplanationProps): JSX.Element {
                 </Typography>
                 {/* <br/> */}
                 <Typography variant="caption" noWrap={true}>
-                  Verification key: <Link href={`https://${el.verificationKID}.adem-configuration.${extIssURL.host}`}>
-                    {el.verificationKID}
+                  Verification key: <Link href={`https://${el.headers.jwk.kid}.adem-configuration.${extIssURL.host}`}>
+                    {el.headers.jwk.kid}
                   </Link>
                 </Typography>
               </li>
