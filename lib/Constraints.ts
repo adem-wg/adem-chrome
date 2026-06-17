@@ -128,7 +128,3 @@ export class ConstraintSet {
     }
   }
 }
-
-export function parseAssetIdentifier(raw: string): AI {
-  return new AI(raw);
-}

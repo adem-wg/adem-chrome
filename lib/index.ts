@@ -1,7 +1,7 @@
 export { default as Claim, NewClaim, parseToken } from './Claim.js';
 export type { Headers, LogPointer, Payload, VerifyOptions } from './Claim.js';
 export { default as ClaimSet } from './ClaimSet.js';
-export { AI, ConstraintSet, parseAssetIdentifier } from './Constraints.js';
+export { AI, ConstraintSet } from './Constraints.js';
 export type { Constraints, IP } from './Constraints.js';
 export { calculateKid } from './keys/hash.js';
 export { KeyStore } from './keys/keys.js';
