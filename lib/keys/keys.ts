@@ -19,7 +19,7 @@ export class KeyStore {
     return kid in this.authenticated;
   }
 
-  put(kid: string): void {
+  setAuthenticated(kid: string): void {
     this.authenticated[kid] = true;
   }
 }

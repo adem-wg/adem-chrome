@@ -41,7 +41,7 @@ export async function verifyTokens(
 ): Promise<VerificationResults> {
   const keys = new KeyStore();
   for (const key of trustedKeys) {
-    keys.put(await keys.add(key));
+    keys.setAuthenticated(await keys.add(key));
   }
 
   const tokens: string[] = [];

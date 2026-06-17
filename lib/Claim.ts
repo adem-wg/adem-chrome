@@ -128,7 +128,7 @@ class Claim {
     const key = await this.getVerificationKey(keys, options);
     await jwtVerify(this.token, key as KeyLike);
     if (this.endorses !== undefined) {
-      keys.put(this.endorses);
+      keys.setAuthenticated(this.endorses);
     }
   }
 
