@@ -51,21 +51,31 @@ function importKey(key: JWK | undefined): Promise<KeyLike | Uint8Array> {
   }
 }
 
+async function resolveHeaderKey(rawHeaders: RawHeaders, keys: KeyStore): Promise<JWK> {
+  if (rawHeaders.jwk !== undefined) {
+    const kid = await calculateKid(rawHeaders.jwk);
+    if (rawHeaders.kid !== undefined && rawHeaders.kid !== kid) {
+      throw new Error('header kid does not match jwk');
+    }
+    return Object.assign({}, rawHeaders.jwk, { alg: rawHeaders.alg, kid });
+  }
+
+  if (rawHeaders.kid !== undefined) {
+    const jwk = keys.get(rawHeaders.kid);
+    if (jwk !== undefined) {
+      return Object.assign({}, jwk, { alg: rawHeaders.alg, kid: rawHeaders.kid });
+    }
+  }
+
+  throw new Error('no verification key');
+}
+
 export async function NewClaim(token: string, keys: KeyStore = new KeyStore()): Promise<Claim> {
   const [headersRaw, payloadRaw] = token.split('.');
   const rawHeaders = JSON.parse(Buffer.from(headersRaw, 'base64url').toString()) as RawHeaders;
   const payload = JSON.parse(Buffer.from(payloadRaw, 'base64url').toString()) as Payload;
 
-  let jwk = rawHeaders.jwk;
-  if (jwk !== undefined) {
-    jwk = Object.assign({}, jwk, { alg: rawHeaders.alg, kid: await calculateKid(jwk) });
-  } else if (rawHeaders.kid !== undefined) {
-    jwk = keys.get(rawHeaders.kid);
-  }
-  if (jwk === undefined) {
-    throw new Error('no verification key');
-  }
-
+  const jwk = await resolveHeaderKey(rawHeaders, keys);
   const headers: Headers = { alg: rawHeaders.alg, cty: rawHeaders.cty, jwk };
   const isRoot = payload.log !== undefined;
   const endorses = headers.cty === 'adem-end' ? payload.key : undefined;
