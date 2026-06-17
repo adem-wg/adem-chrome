@@ -14,7 +14,7 @@ async function verifyFixture(name: string) {
 
 describe('static deployment verification fixtures', () => {
   beforeAll(() => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-06-03T00:00:00Z'));
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-17T00:10:00Z'));
   });
 
   afterAll(() => jest.useRealTimers());
@@ -39,11 +39,18 @@ describe('static deployment verification fixtures', () => {
     expect(result.issuer).toBe('https://redcross.org.uk');
   });
 
-  test('rejects cyberstar.online', async () => {
+  test('verifies cyberstar.online', async () => {
     const material = parseTXTRecords(loadDigFixture('cyberstar.online'));
     expect(material.tokens).toHaveLength(2);
-    expect(material.keys).toHaveLength(0);
+    expect(material.keys).toHaveLength(2);
     const result = await verifyFixture('cyberstar.online');
-    expect(result.results).toEqual([VerificationResult.INVALID]);
+    expect(result.results).not.toContain(VerificationResult.INVALID);
+    expect(result.protected).toEqual([
+      '[185.230.63.171]',
+      '[185.230.63.107]',
+      '[185.230.63.186]',
+      'cyberstar.online',
+    ]);
+    expect(result.issuer).toBe('https://cyberstar.online');
   });
 });
