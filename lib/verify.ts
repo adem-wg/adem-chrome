@@ -50,7 +50,7 @@ export async function verifyTokens(
     if (key === undefined) {
       tokens.push(raw);
     } else {
-      await keys.add(key);
+      keys.put(await keys.add(key));
     }
   }
 
