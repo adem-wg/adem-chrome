@@ -38,8 +38,6 @@ export function parseTXTRecords(records: TXTRecord[]): DNSMaterial {
   return result;
 }
 
-export const parseTXTs = parseTXTRecords;
-
 export function fetchDnsTokens(host: string): Promise<DNSMaterial> {
   return queryTXT(host).then(parseTXTRecords);
 }
