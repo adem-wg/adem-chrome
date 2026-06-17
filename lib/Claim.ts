@@ -149,7 +149,10 @@ class Claim {
         }));
       }
     } else {
-      await keys.isAuthenticated(this.headers.jwk.kid as string);
+      const kid = this.headers.jwk.kid as string;
+      if (!keys.isAuthenticated(kid)) {
+        throw new Error(`no key with kid ${kid}`);
+      }
     }
 
     return importKey(this.headers.jwk);

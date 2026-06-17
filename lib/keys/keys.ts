@@ -15,11 +15,8 @@ export class KeyStore {
     return this.keys[kid];
   }
 
-  isAuthenticated(kid: string): Promise<void> {
-    if (kid in this.authenticated) {
-      return Promise.resolve();
-    }
-    return Promise.reject(new Error(`no key with kid ${kid}`));
+  isAuthenticated(kid: string): boolean {
+    return kid in this.authenticated;
   }
 
   put(kid: string): void {
