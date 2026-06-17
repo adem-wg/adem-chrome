@@ -3,11 +3,13 @@ const APPLE = "https://valid.apple.com/ct/log_list/current_log_list.json";
 
 export interface LogInfo {
   log_id: string
-  url: string
+  url?: string
+  monitoring_url?: string
 }
 
 interface Operator {
   logs: LogInfo[]
+  tiled_logs?: LogInfo[]
 }
 
 interface LogList {
@@ -22,7 +24,7 @@ function fetchLog(logUrl: string): Promise<LogMap> {
       return response.ok ? response.json() : Promise.reject();
     })
     .then((json: LogList) => {
-      let logs = json.operators.map(operator => operator.logs)
+      let logs = json.operators.map(operator => [...operator.logs, ...(operator.tiled_logs || [])])
         .reduce((aggr, logs) => aggr.concat(logs), []);
       return Object.fromEntries(logs.map(logInfo => [logInfo.log_id, logInfo]));
     });

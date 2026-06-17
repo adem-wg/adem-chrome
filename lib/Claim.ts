@@ -1,6 +1,6 @@
 import { importJWK, JWK, jwtVerify, KeyLike } from 'jose';
 import { Constraints, ConstraintSet, IP } from './Constraints.js';
-import { checkInclusion } from './ct/api.js';
+import { checkLogPointer } from './ct/api.js';
 import { calculateKid } from './keys/hash.js';
 import { KeyStore } from './keys/keys.js';
 
@@ -141,12 +141,9 @@ class Claim {
       if (options.ctVerifier !== undefined) {
         await options.ctVerifier(this.payload.log, this.payload.iss, this.headers.jwk);
       } else {
-        await Promise.all(this.payload.log.map(({ ver, id, hash }) => {
-          if (ver !== 'v1' || hash === undefined) {
-            return Promise.reject(new Error(`unsupported CT log version ${ver}`));
-          }
-          return checkInclusion(id, hash, new URL(this.payload.iss), this.headers.jwk.kid as string);
-        }));
+        await Promise.all(this.payload.log.map((log) =>
+          checkLogPointer(log, new URL(this.payload.iss), this.headers.jwk.kid as string)
+        ));
       }
     } else {
       const kid = this.headers.jwk.kid as string;

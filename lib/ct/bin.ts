@@ -21,8 +21,123 @@ export function decodeLeafInput(leaf_input: string): any {
   return ASN1.decode(view.getBytes(tbsLength)); // read tbs_certificate
 }
 
-export function getSubjectAltNames(leaf_input: string): string[] {
-  return findSubjectAltNames(decodeLeafInput(leaf_input));
+export function getSubjectAltNames(cert_der: string | Buffer | any): string[] {
+  return findSubjectAltNames(parseCertificateOrTbs(cert_der));
+}
+
+function parseCertificateOrTbs(cert_der: string | Buffer | any): any {
+  if (!(Buffer.isBuffer(cert_der) || typeof cert_der === 'string')) {
+    return cert_der;
+  }
+
+  const cert = ASN1.decode(typeof cert_der === 'string' ? Buffer.from(cert_der, 'base64') : cert_der);
+  return certGetPath(cert, 0, 0, 0)?.content() === '2' ? certGetPath(cert, 0) : cert;
+}
+
+export interface StaticLogEntry {
+  certificate: Buffer
+  leafIndex?: number
+}
+
+function readUint24(buf: Buffer, offset: number): number {
+  return buf.readUIntBE(offset, 3);
+}
+
+function readUint40(buf: Buffer, offset: number): number {
+  return buf.readUIntBE(offset, 5);
+}
+
+function readOpaque(buf: Buffer, offset: number, lengthBytes: 2 | 3): [Buffer, number] {
+  if (offset + lengthBytes > buf.length) {
+    throw new Error('truncated static CT entry');
+  }
+
+  const length = lengthBytes === 2 ? buf.readUInt16BE(offset) : readUint24(buf, offset);
+  const start = offset + lengthBytes;
+  const end = start + length;
+  if (end > buf.length) {
+    throw new Error('truncated static CT entry');
+  }
+  return [buf.subarray(start, end), end];
+}
+
+function readStaticLeaf(buf: Buffer, offset: number): [StaticLogEntry, number] {
+  if (offset + 10 > buf.length) {
+    throw new Error('truncated static CT entry');
+  }
+
+  let pos = offset + 8; // timestamp
+  const entryType = buf.readUInt16BE(pos);
+  pos += 2;
+
+  let certificate: Buffer;
+  let preCertificate: Buffer | undefined;
+  if (entryType === 0) {
+    [certificate, pos] = readOpaque(buf, pos, 3);
+  } else if (entryType === 1) {
+    pos += 32; // issuer_key_hash
+    [certificate, pos] = readOpaque(buf, pos, 3);
+  } else {
+    throw new Error(`unsupported static CT entry type ${entryType}`);
+  }
+
+  const [extensions, afterExtensions] = readOpaque(buf, pos, 2);
+  pos = afterExtensions;
+
+  if (entryType === 1) {
+    [preCertificate, pos] = readOpaque(buf, pos, 3);
+  }
+
+  const [fingerprints, afterFingerprints] = readOpaque(buf, pos, 2);
+  pos = afterFingerprints;
+
+  if (fingerprints.length % 32 !== 0) {
+    throw new Error('invalid static CT chain fingerprints');
+  }
+
+  return [{
+    certificate: preCertificate || certificate,
+    leafIndex: parseStaticLeafIndex(extensions),
+  }, pos];
+}
+
+function parseStaticLeafIndex(extensions: Buffer): number | undefined {
+  if (extensions.length === 0) {
+    return undefined;
+  }
+
+  let pos = 0;
+  while (pos < extensions.length) {
+    if (pos + 3 > extensions.length) {
+      throw new Error('invalid static CT extensions');
+    }
+    const extensionType = extensions.readUInt8(pos);
+    const [extension, afterExtension] = readOpaque(extensions, pos + 1, 2);
+    pos = afterExtension;
+
+    if (extensionType === 0) {
+      if (extension.length !== 5) {
+        throw new Error('invalid static CT leaf index extension');
+      }
+      return readUint40(extension, 0);
+    }
+  }
+
+  return undefined;
+}
+
+export function getStaticEntryCertificate(tile: ArrayBuffer | Buffer, index: number): Buffer {
+  const buf = Buffer.from(tile);
+  let pos = 0;
+  while (pos < buf.length) {
+    const [entry, next] = readStaticLeaf(buf, pos);
+    if (entry.leafIndex === index) {
+      return entry.certificate;
+    }
+    pos = next;
+  }
+
+  throw new Error(`static CT entry ${index} not found in tile`);
 }
 
 function findSubjectAltNames(cert: any): string[] {
