@@ -10,11 +10,10 @@ export interface Constraints {
 
 export type IP = ipaddr.IPv4 | ipaddr.IPv6;
 
-const IPv6_R = /\[([/a-f\d:]+)\]:?(\d+)?/;
+const IPv6_R = /^\[([/a-f\d:]+)\]$/;
 
 export class AI {
   constraint: string | IP | [IP, number];
-  port?: number = undefined;
 
   constructor(from: string) {
     const ipMatch = IPv6_R.exec(from);
@@ -23,9 +22,6 @@ export class AI {
         this.constraint = ipaddr.parseCIDR(ipMatch[1]);
       } catch {
         this.constraint = ipaddr.parse(ipMatch[1]);
-      }
-      if (ipMatch[2] !== undefined) {
-        this.port = parseInt(ipMatch[2]);
       }
     } else {
       this.constraint = from.toLowerCase();
