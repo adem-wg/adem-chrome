@@ -2,7 +2,6 @@ import Claim from './Claim.js';
 import ipaddr from 'ipaddr.js';
 
 export interface Constraints {
-  ass?: string[]
   assets?: string[]
   prp?: string[]
   dst?: string[]
@@ -79,15 +78,14 @@ export class AI {
 }
 
 export class ConstraintSet {
-  ass?: AI[];
+  assets?: AI[];
   prp?: number;
   dst?: number;
   wnd?: number;
 
   constructor(constraints: Constraints) {
-    const assets = constraints.ass || constraints.assets;
-    if (assets) {
-      this.ass = assets.map((v) => new AI(v));
+    if (constraints.assets) {
+      this.assets = constraints.assets.map((v) => new AI(v));
     }
 
     if (constraints.prp !== undefined) {
@@ -119,7 +117,7 @@ export class ConstraintSet {
 
     // emb will be defined on emblems
     const { constraints } = emblem;
-    if (this.ass !== undefined && !constraints?.ass?.reduce((aggr, v) => aggr && v.anyMoreGeneral(this.ass as AI []), true)) {
+    if (this.assets !== undefined && !constraints?.assets?.reduce((aggr, v) => aggr && v.anyMoreGeneral(this.assets as AI []), true)) {
       return false;
     }
 

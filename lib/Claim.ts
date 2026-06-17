@@ -116,7 +116,7 @@ class Claim {
         throw new Error('emblem must mark assets');
       }
       this.constraints = new ConstraintSet(
-        Object.assign(this.payload.emb || {}, { ass: this.payload.assets })
+        { ...this.payload.emb, assets: this.payload.assets }
       );
     } else {
       this.endorses = endorses;
@@ -162,11 +162,11 @@ class Claim {
     if (this.endorses !== undefined) {
       // Endorsements don't mark anything as protected
       return false;
-    } else if (this.constraints?.ass === undefined) {
+    } else if (this.constraints?.assets === undefined) {
       return false;
     }
 
-    for (const ai of this.constraints.ass) {
+    for (const ai of this.constraints.assets) {
       if (ai.moreGeneralThan(ip)) {
         return true;
       }
