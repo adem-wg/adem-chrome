@@ -1,57 +1,45 @@
-import Claim, { NewClaim } from './Claim';
-import ClaimSet from './ClaimSet';
-import { DNSResponse } from './util/dns';
-import { allFulfilled, logAndReject } from './util/promise';
+import { JWK } from 'jose';
+import { DNSResponse, queryTXT } from './util/dns.js';
 
-const ADEM_R = /adem(-.+)?=(.+)/;
+const ADEM_R = /^adem-(token|key)(?:-.+)?=(.+)$/;
 
-function get<T>(map: any, def: T, ...path: string[]): T | undefined {
-  if (path.length === 0) {
-    return undefined;
-  }
+export type TXTRecord = string | string[] | DNSResponse;
 
-  let iter = map;
-  const lastI = path.pop() as string;
-  for (const component of path) {
-    if (iter[component] === undefined) {
-      iter[component] = {};
-    }
-    iter = iter[component];
-  }
-
-  if (iter[lastI] === undefined) {
-    iter[lastI] = def;
-  }
-  return iter[lastI];
+export interface DNSMaterial {
+  tokens: string[]
+  keys: JWK[]
 }
 
-type IdentMap = { [identifier: string]:string[] };
-
-export function parseTXTs(responses: DNSResponse[]): Promise<ClaimSet[]> {
-  const claims = responses.map((rec) => ADEM_R.exec(rec.data))
-    .filter((match): match is RegExpExecArray => Boolean(match));
-
-  const tokens: IdentMap = {};
-  claims.forEach((claimMatch) => {
-    const [ _, identifier, b64 ] = claimMatch;
-    get(tokens, [] as string[], identifier || '')?.push(b64);
-  });
-
-  const sets: Promise<ClaimSet>[] = [];
-  for (const [_, seqs] of Object.entries(tokens)) {
-    const claimsP = seqs.map((rawToken) => NewClaim(rawToken));
-    const setP = Promise.all(claimsP).then((claims) => {
-      const emblems = claims.filter((t) => t.headers.cty === 'adem-emb');
-      if (emblems.length !== 1) {
-        throw new Error('multiple emblems found')
-      }
-      const endorsements = claims.filter((t) => t.headers.cty === 'adem-end');
-      console.log(`found ${seqs.length} tokens`)
-
-      return new ClaimSet(emblems[0], endorsements);
-    });
-    sets.push(setP);
+function recordText(record: TXTRecord): string {
+  const data = typeof record === 'string' || Array.isArray(record) ? record : record.data;
+  if (Array.isArray(data)) {
+    return data.join('');
   }
+  if (data.startsWith('"')) {
+    return (JSON.parse(`[${data.replace(/"\s+"/g, '","')}]`) as string[]).join('');
+  }
+  return data;
+}
 
-  return allFulfilled(sets, console.log);
+export function parseTXTRecords(records: TXTRecord[]): DNSMaterial {
+  const result: DNSMaterial = { tokens: [], keys: [] };
+  for (const record of records) {
+    const data = recordText(record);
+    const match = ADEM_R.exec(data);
+    if (match === null) {
+      continue;
+    }
+    if (match[1] === 'token') {
+      result.tokens.push(match[2]);
+    } else {
+      result.keys.push(JSON.parse(match[2]) as JWK);
+    }
+  }
+  return result;
+}
+
+export const parseTXTs = parseTXTRecords;
+
+export function fetchDnsTokens(host: string): Promise<DNSMaterial> {
+  return queryTXT(host).then(parseTXTRecords);
 }

@@ -6,7 +6,7 @@ function certGetPath(cert: any, ...is: number[]): any {
 }
 
 export function decodeLeafInput(leaf_input: string): any {
-  const buf = Uint8Array.from(window.atob(leaf_input), (c) => c.charCodeAt(0));
+  const buf = Buffer.from(leaf_input, 'base64');
   const view = new jDataView(buf);
   view.skip(1);  // version
   view.skip(1);  // leaf_type

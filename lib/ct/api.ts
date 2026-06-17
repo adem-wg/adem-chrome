@@ -1,5 +1,5 @@
-import { getSubjectAltNames } from './bin'
-import { fetchAllLogs, LogMap } from './logs'
+import { getSubjectAltNames } from './bin.js'
+import { fetchAllLogs, LogMap } from './logs.js'
 
 let logs: LogMap;
 function fetchLogs(): Promise<LogMap> {

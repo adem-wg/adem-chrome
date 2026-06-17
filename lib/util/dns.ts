@@ -4,7 +4,7 @@ export interface DNSResponse {
   name: string
   type: number
   TTL: number
-  data: string
+  data: string | string[]
 }
 
 export interface GoogleDNSBody {
@@ -30,7 +30,7 @@ function dnsQuery(host: string, type: string): Promise<DNSResponse[]> {
 }
 
 function parseALike(resp: DNSResponse[]): (ipaddr.IPv4 | ipaddr.IPv6)[] {
-  return resp.map((r) => ipaddr.parse(r.data));
+  return resp.map((r) => ipaddr.parse(r.data as string));
 }
 
 export function queryTXT(host: string) {

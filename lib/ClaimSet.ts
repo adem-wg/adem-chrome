@@ -1,5 +1,6 @@
-import Claim from './Claim';
-import { ConstraintSet } from './Constraints';
+import Claim, { VerifyOptions } from './Claim.js';
+import { ConstraintSet } from './Constraints.js';
+import { KeyStore } from './keys/keys.js';
 
 /**
  * A set of ADEM claims. Both emblems and endorsement.
@@ -50,11 +51,11 @@ class ClaimSet {
     }
   }
 
-  async verify(): Promise<ClaimSet> {
+  async verify(keys: KeyStore, options: VerifyOptions = {}): Promise<ClaimSet> {
     // Verify external endorsements
     let endorsedPPRootKID: string | undefined;
     for (const token of this.externals) {
-      await token.verify();
+      await token.verify(keys, options);
       if (!endorsedPPRootKID) {
         endorsedPPRootKID = token.endorses;
       } else if (endorsedPPRootKID !== token.endorses) {
@@ -62,14 +63,14 @@ class ClaimSet {
       }
     }
 
-    if (this.internals[0].headers.jwk.kid !== endorsedPPRootKID) {
+    if (endorsedPPRootKID !== undefined && this.internals[0]?.headers.jwk.kid !== endorsedPPRootKID) {
       throw new Error('PP root is not signed by endorsed key');
     }
 
     for (let token of this.internals) {
-      await token.verify();
+      await token.verify(keys, options);
     }
-    await this.emblem.verify();
+    await this.emblem.verify(keys, options);
 
     // Check that it matches all constraints
     for (let endorsement of this.externals.concat(this.internals)) {

@@ -1,8 +1,8 @@
 import { importJWK, JWK, jwtVerify, KeyLike } from 'jose';
-import { Constraints, ConstraintSet, IP } from './Constraints';
-import { checkInclusion } from './ct/api';
-import { readKID } from './keys/hash';
-import { isAuthenticated, put } from './keys/keys';
+import { Constraints, ConstraintSet, IP } from './Constraints.js';
+import { checkInclusion } from './ct/api.js';
+import { calculateKid } from './keys/hash.js';
+import { KeyStore } from './keys/keys.js';
 
 export interface Headers {
   alg: string
@@ -10,10 +10,18 @@ export interface Headers {
   cty: string
 }
 
+interface RawHeaders {
+  alg: string
+  jwk?: JWK
+  kid?: string
+  cty: string
+}
+
 export interface LogPointer {
   ver: string
   id: string
-  hash: string
+  hash?: string
+  index?: number
 }
 
 export interface Payload {
@@ -29,6 +37,10 @@ export interface Payload {
   exp: number
 }
 
+export interface VerifyOptions {
+  ctVerifier?: (logs: LogPointer[], issuer: string, key: JWK) => Promise<void>
+}
+
 function importKey(key: JWK | undefined): Promise<KeyLike | Uint8Array> {
   if (key === undefined) {
     return Promise.reject(new Error('key undefined'));
@@ -39,16 +51,28 @@ function importKey(key: JWK | undefined): Promise<KeyLike | Uint8Array> {
   }
 }
 
-export async function NewClaim(token: string): Promise<Claim> {
+export async function NewClaim(token: string, keys: KeyStore = new KeyStore()): Promise<Claim> {
   const [headersRaw, payloadRaw] = token.split('.');
-  const headers = JSON.parse(window.atob(headersRaw)) as Headers;
-  const payload = JSON.parse(window.atob(payloadRaw)) as Payload;
-  // What key should be used for verification?
+  const rawHeaders = JSON.parse(Buffer.from(headersRaw, 'base64url').toString()) as RawHeaders;
+  const payload = JSON.parse(Buffer.from(payloadRaw, 'base64url').toString()) as Payload;
+
+  let jwk = rawHeaders.jwk;
+  if (jwk !== undefined) {
+    jwk = Object.assign({}, jwk, { alg: rawHeaders.alg, kid: await calculateKid(jwk) });
+  } else if (rawHeaders.kid !== undefined) {
+    jwk = keys.get(rawHeaders.kid);
+  }
+  if (jwk === undefined) {
+    throw new Error('no verification key');
+  }
+
+  const headers: Headers = { alg: rawHeaders.alg, cty: rawHeaders.cty, jwk };
   const isRoot = payload.log !== undefined;
-  const verificationKID = readKID(headers.jwk);
-  const endorses = payload.sub !== undefined ? payload.key : undefined;
+  const endorses = headers.cty === 'adem-end' ? payload.key : undefined;
   return new Claim(token, headers, payload, isRoot, endorses);
 }
+
+export const parseToken = NewClaim;
 
 /**
  * Parses an ADEM claim which can be both an emblem or an endorsement.
@@ -69,9 +93,7 @@ class Claim {
   constraints?: ConstraintSet;
 
   constructor(token: string, headers: Headers, payload: Payload, isRoot?: boolean, endorses?: string) {
-    if (headers.jwk === undefined) {
-      throw new Error('no verification key');
-    } else if (headers.jwk.kid === undefined) {
+    if (headers.jwk.kid === undefined) {
       throw new Error('header key misses kid');
     }
 
@@ -92,34 +114,32 @@ class Claim {
     }
   }
 
-  async verify(): Promise<void> {
-    const key = await this.getVerificationKey();
-    // On reject, await jwtVerify will throw
+  async verify(keys: KeyStore, options: VerifyOptions = {}): Promise<void> {
+    const key = await this.getVerificationKey(keys, options);
     await jwtVerify(this.token, key as KeyLike);
     if (this.endorses !== undefined) {
-      await put(this.endorses);
+      keys.put(this.endorses);
     }
   }
 
-  async getVerificationKey(): Promise<KeyLike | Uint8Array> {
+  async getVerificationKey(keys: KeyStore, options: VerifyOptions): Promise<KeyLike | Uint8Array> {
     if (this.isRoot) {
       if (!this.payload.log?.length) {
         throw new Error('root endorsement verification requires log pointers');
       }
 
-      // await will throw when *any* promise is rejected
-      await Promise.all(
-        this.payload.log.map(({ id, hash }) => checkInclusion(
-          id,
-          hash,
-          new URL(this.payload.iss),
-          // This assumes that KID was calculated. This invariant is established
-          // in verify(...).
-          this.headers.jwk.kid as string,
-        )),
-      );
+      if (options.ctVerifier !== undefined) {
+        await options.ctVerifier(this.payload.log, this.payload.iss, this.headers.jwk);
+      } else {
+        await Promise.all(this.payload.log.map(({ ver, id, hash }) => {
+          if (ver !== 'v1' || hash === undefined) {
+            return Promise.reject(new Error(`unsupported CT log version ${ver}`));
+          }
+          return checkInclusion(id, hash, new URL(this.payload.iss), this.headers.jwk.kid as string);
+        }));
+      }
     } else {
-      await isAuthenticated(this.headers.jwk.kid as string);
+      await keys.isAuthenticated(this.headers.jwk.kid as string);
     }
 
     return importKey(this.headers.jwk);

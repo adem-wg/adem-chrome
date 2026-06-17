@@ -1,9 +1,9 @@
-import Claim from './Claim';
+import Claim from './Claim.js';
 import ipaddr from 'ipaddr.js';
-import UnsupportedError from './util/unsupported';
 
 export interface Constraints {
   ass?: string[]
+  assets?: string[]
   prp?: string[]
   dst?: string[]
   wnd?: number
@@ -14,7 +14,7 @@ export type IP = ipaddr.IPv4 | ipaddr.IPv6;
 const IPv6_R = /\[([/a-f\d:]+)\]:?(\d+)?/;
 
 export class AI {
-  constraint: URL | IP | [IP, number];
+  constraint: string | IP | [IP, number];
   port?: number = undefined;
 
   constructor(from: string) {
@@ -29,14 +29,23 @@ export class AI {
         this.port = parseInt(ipMatch[2]);
       }
     } else {
-      throw new UnsupportedError();
+      this.constraint = from.toLowerCase();
     }
   }
 
   moreGeneralThan(ai: AI | IP): boolean {
     const constraint = ai instanceof AI ? ai.constraint : ai;
-    if (constraint instanceof URL || this.constraint instanceof URL) {
-      throw new UnsupportedError();
+    if (typeof this.constraint === 'string') {
+      if (typeof constraint !== 'string') {
+        return false;
+      } else if (this.constraint.startsWith('*.')) {
+        const suffix = this.constraint.slice(1);
+        return constraint === this.constraint.slice(2) || constraint.endsWith(suffix);
+      } else {
+        return constraint === this.constraint;
+      }
+    } else if (typeof constraint === 'string') {
+      return false;
     } else if (this.constraint instanceof Array) {
       if (constraint instanceof Array) {
         if (this.constraint[1] > constraint[1]) {
@@ -76,17 +85,17 @@ export class ConstraintSet {
   wnd?: number;
 
   constructor(constraints: Constraints) {
-    if (constraints.ass) {
-      this.ass = constraints.ass.map((v) => new AI(v));
+    const assets = constraints.ass || constraints.assets;
+    if (assets) {
+      this.ass = assets.map((v) => new AI(v));
     }
 
     if (constraints.prp !== undefined) {
       this.prp = 0;
       for (const constraint of constraints.prp) {
         switch (constraint) {
-          case "dns": this.prp |= 0b001; break;
-          case "tls": this.prp |= 0b010; break;
-          case "udp": this.prp |= 0b100; break;
+          case "protective": this.prp |= 0b01; break;
+          case "indicative": this.prp |= 0b10; break;
         }
       }
     }
@@ -124,4 +133,8 @@ export class ConstraintSet {
       return true;
     }
   }
+}
+
+export function parseAssetIdentifier(raw: string): AI {
+  return new AI(raw);
 }
