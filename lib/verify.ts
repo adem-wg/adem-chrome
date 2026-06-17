@@ -73,7 +73,7 @@ export async function verifyTokens(
     return {
       results,
       protected: set.emblem.payload.assets || [],
-      issuer: set.pp,
+      issuer: set.emblemIssuer,
       endorsedBy: set.externals.map((claim) => claim.payload.iss),
     };
   } catch {

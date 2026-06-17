@@ -12,12 +12,12 @@ class ClaimSet {
   internals: Claim[] = [];
   /** Endorsements with a different iss claim as the emblem */
   externals: Claim[] = [];
-  /** Identity of the claiming protected party. */
-  pp: string;
+  /** Identity of the emblem issuer. */
+  emblemIssuer: string;
 
   constructor(emblem: Claim, endorsements: Claim[]) {
     this.emblem = emblem;
-    this.pp = this.emblem.payload.iss;
+    this.emblemIssuer = this.emblem.payload.iss;
 
     const endorsedBy: { [kid: string]: Claim } = {};
     let root: Claim | undefined;
@@ -53,18 +53,18 @@ class ClaimSet {
 
   async verify(keys: KeyStore, options: VerifyOptions = {}): Promise<ClaimSet> {
     // Verify external endorsements
-    let endorsedPPRootKID: string | undefined;
+    let endorsedIssuerRootKid: string | undefined;
     for (const token of this.externals) {
       await token.verify(keys, options);
-      if (!endorsedPPRootKID) {
-        endorsedPPRootKID = token.endorses;
-      } else if (endorsedPPRootKID !== token.endorses) {
+      if (!endorsedIssuerRootKid) {
+        endorsedIssuerRootKid = token.endorses;
+      } else if (endorsedIssuerRootKid !== token.endorses) {
         throw new Error('inconsistent external endorsements');
       }
     }
 
-    if (endorsedPPRootKID !== undefined && this.internals[0]?.headers.jwk.kid !== endorsedPPRootKID) {
-      throw new Error('PP root is not signed by endorsed key');
+    if (endorsedIssuerRootKid !== undefined && this.internals[0]?.headers.jwk.kid !== endorsedIssuerRootKid) {
+      throw new Error('emblem issuer root is not signed by endorsed key');
     }
 
     for (let token of this.internals) {
