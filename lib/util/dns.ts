@@ -4,12 +4,14 @@ export interface DNSResponse {
   name: string
   type: number
   TTL: number
-  data: string | string[]
+  data: string
 }
 
 export interface GoogleDNSBody {
   Answer?: DNSResponse[]
 }
+
+type GoogleDNSResponse = Omit<DNSResponse, 'data'> & { data: string | string[] };
 
 function dnsQuery(host: string, type: string): Promise<DNSResponse[]> {
   return fetch(`https://dns.google.com/resolve?name=${host}&type=${type}`)
@@ -30,11 +32,18 @@ function dnsQuery(host: string, type: string): Promise<DNSResponse[]> {
 }
 
 function parseALike(resp: DNSResponse[]): (ipaddr.IPv4 | ipaddr.IPv6)[] {
-  return resp.map((r) => ipaddr.parse(r.data as string));
+  return resp.map((r) => ipaddr.parse(r.data));
+}
+
+function parseTXT(resp: GoogleDNSResponse[]): DNSResponse[] {
+  return resp.map((r) => ({
+    ...r,
+    data: Array.isArray(r.data) ? r.data.join('') : r.data,
+  }));
 }
 
 export function queryTXT(host: string) {
-  return dnsQuery(host, 'TXT');
+  return dnsQuery(host, 'TXT').then(parseTXT);
 }
 
 export function queryA(host: string) {
