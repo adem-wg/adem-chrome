@@ -18,34 +18,19 @@ export interface VerificationResults {
   errors: Error[]
 }
 
-function parseKey(raw: string): JWK | undefined {
-  try {
-    const key = JSON.parse(raw) as JWK;
-    return typeof key.kty === 'string' ? key : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export async function verifyTokens(
-  rawTokens: string[],
+  tokens: string[],
+  untrustedKeys: JWK[] = [],
   trustedKeys: JWK[] = [],
   options: VerifyOptions = {},
 ): Promise<VerificationResults> {
   const keys = new KeyStore();
+  for (const key of untrustedKeys) {
+    await keys.add(key);
+  }
   for (const key of trustedKeys) {
     const kid = await keys.add(key);
     keys.setAuthenticated(kid);
-  }
-
-  const tokens: string[] = [];
-  for (const raw of rawTokens) {
-    const key = parseKey(raw);
-    if (key === undefined) {
-      tokens.push(raw);
-    } else {
-      await keys.add(key);
-    }
   }
 
   const claimPs = await Promise.allSettled(tokens.map((token) => NewClaim(token, keys)));

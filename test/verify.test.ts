@@ -6,7 +6,8 @@ const acceptFixtureCT = async (): Promise<void> => undefined;
 async function verifyFixture(name: string) {
   const material = parseTXTRecords(loadDigFixture(name));
   return verifyTokens(
-    [...material.tokens, ...material.keys.map((key) => JSON.stringify(key))],
+    material.tokens,
+    material.keys,
     [],
     { ctVerifier: acceptFixtureCT },
   );
@@ -68,7 +69,8 @@ describe('static deployment verification fixtures', () => {
   test('keeps verified emblem result when extra tokens are invalid', async () => {
     const material = parseTXTRecords(loadDigFixture('cyberstar.online'));
     const result = await verifyTokens(
-      [...material.tokens, ...material.keys.map((key) => JSON.stringify(key)), 'not-a-token'],
+      [...material.tokens, 'not-a-token'],
+      material.keys,
       [],
       { ctVerifier: acceptFixtureCT },
     );
@@ -87,7 +89,8 @@ describe('static deployment verification fixtures', () => {
   test('filters invalid external endorsements from the verified claim set', async () => {
     const material = parseTXTRecords(loadDigFixture('emblem.felixlinker.de'));
     const result = await verifyTokens(
-      [...material.tokens, ...material.keys.map((key) => JSON.stringify(key))],
+      material.tokens,
+      material.keys,
       [],
       {
         ctVerifier: async (_logs, issuer) => {
