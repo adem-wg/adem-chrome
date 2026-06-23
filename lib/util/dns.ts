@@ -8,6 +8,7 @@ export interface DNSResponse {
 }
 
 export interface GoogleDNSBody {
+  Status: number
   Answer?: DNSResponse[]
 }
 
@@ -22,11 +23,13 @@ function dnsQuery(host: string, type: string): Promise<DNSResponse[]> {
         return resp.json();
       }
     })
-    .then((json) => {
-      if ('Answer' in json) {
+    .then((json: GoogleDNSBody) => {
+      if (json.Status === 0 && 'Answer' in json) {
         return Promise.resolve(json.Answer as DNSResponse[]);
+      } else if (json.Status === 3) { // name does not exit
+        return Promise.resolve([]);
       } else {
-        return Promise.reject(new Error('response does not contain answer'));
+        return Promise.reject(new Error(`could not resolve ${host}`));
       }
     });
 }
