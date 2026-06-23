@@ -48,7 +48,7 @@ export async function verifyTokens(
     }
   }
 
-  const claimPs = await Promise.allSettled(tokens.map((token) => NewClaim(token)));
+  const claimPs = await Promise.allSettled(tokens.map((token) => NewClaim(token, keys)));
   const claims = claimPs.filter((res) => res.status === 'fulfilled').map((res) => res.value);
   const parserErrs = claimPs.filter((res) => res.status === 'rejected').map((res) => new Error(`could not parse token: ${res.reason}`));
   const set = new ClaimSet();
