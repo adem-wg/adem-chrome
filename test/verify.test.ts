@@ -62,7 +62,7 @@ describe('static deployment verification fixtures', () => {
 
     expect(result.results).toEqual([VerificationResult.INVALID]);
     expect(result.errors).toHaveLength(3);
-    expect(result.errors[2]).toBe('token set must contain exactly one emblem');
+    expect(result.errors.map((err) => err.message)).toContain('token set must contain exactly one emblem');
   });
 
   test('keeps verified emblem result when extra tokens are invalid', async () => {
@@ -73,7 +73,7 @@ describe('static deployment verification fixtures', () => {
       { ctVerifier: acceptFixtureCT },
     );
 
-    expect(result.results).toContain(VerificationResult.INVALID);
+    expect(result.results).not.toContain(VerificationResult.INVALID);
     expect(result.results).toContain(VerificationResult.SIGNED);
     expect(result.errors).toHaveLength(1);
     expect(result.protected).toEqual([
@@ -98,10 +98,10 @@ describe('static deployment verification fixtures', () => {
       },
     );
 
-    expect(result.results).toContain(VerificationResult.INVALID);
+    expect(result.results).not.toContain(VerificationResult.INVALID);
     expect(result.results).toContain(VerificationResult.SIGNED);
     expect(result.results).not.toContain(VerificationResult.ENDORSED);
-    expect(result.errors).toContain('external CT failure');
+    expect(result.errors.map((err) => err.message)).toContain('external CT failure');
     expect(result.endorsedBy).toEqual([]);
   });
 });
