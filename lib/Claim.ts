@@ -121,7 +121,7 @@ class Claim {
     this.headers = headers;
     this.payload = payload;
 
-    if (this.headers.cty === undefined) {
+    if (this.headers.cty === 'adem-emb') {
       this.constraints = new ConstraintSet({ ...this.payload.emb, assets: this.payload.assets });
     } else {
       this.constraints = new ConstraintSet(this.payload.emb || {});

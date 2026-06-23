@@ -48,7 +48,9 @@ export async function verifyTokens(
     }
   }
 
-  const claims = await Promise.all(tokens.map((token) => NewClaim(token)));
+  const claimPs = await Promise.allSettled(tokens.map((token) => NewClaim(token)));
+  const claims = claimPs.filter((res) => res.status === 'fulfilled').map((res) => res.value);
+  const parserErrs = claimPs.filter((res) => res.status === 'rejected').map((res) => new Error(`could not parse token: ${res.reason}`));
   const set = new ClaimSet();
   await set.verify(claims, keys, options);
 
@@ -69,6 +71,6 @@ export async function verifyTokens(
     protected: set.emblem?.payload.assets || [],
     issuer: set.emblem?.payload.iss,
     endorsedBy: set.externals.map((claim) => claim.payload.iss).filter((iss) => iss !== undefined),
-    errors: set.errors,
+    errors: set.errors.concat(parserErrs),
   };
 }

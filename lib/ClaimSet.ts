@@ -23,7 +23,7 @@ class ClaimSet {
     }
 
     const emblem = emblems[0];
-    const endorsements = tokens.filter((token) => token.headers.cty === 'end');
+    const endorsements = tokens.filter((token) => token.headers.cty === 'adem-end');
     const externals: Claim[] = [];
     const internals: Claim[] = [];
     const endorsedBy: { [kid: string]: Claim } = {};
@@ -83,7 +83,7 @@ class ClaimSet {
       }
     }
 
-    for (let token of this.internals) {
+    for (const token of internals) {
       if (token.payload.sub !== emblem.payload.iss) {
         this.errors.push(new Error('internal endorsement with wrong sub'));
       } else {
@@ -126,8 +126,8 @@ class ClaimSet {
       }
     }
 
-    this.externals.filter(aux);
-    this.internals.filter(aux);
+    this.externals = this.externals.filter(aux);
+    this.internals = this.internals.filter(aux);
   }
 }
 
