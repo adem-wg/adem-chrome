@@ -32,6 +32,18 @@ export interface Payload {
   log?: LogPointer[]
   key?: string
   emb?: Constraints
+  iat: number
+  nbf: number
+  exp: number
+}
+
+export interface RawPayload {
+  iss?: string
+  assets?: string[]
+  sub?: string
+  log?: LogPointer[]
+  key?: string
+  emb?: Constraints
   iat?: number
   nbf?: number
   exp?: number
@@ -73,12 +85,20 @@ async function importHeaders(headers: RawHeaders, keys: KeyStore): Promise<Heade
   }
 }
 
+async function importPayload(payload: RawPayload): Promise<Payload> {
+  if (payload.iat === undefined || payload.nbf === undefined || payload.exp === undefined) {
+    throw new Error('iat/nbf/exp undefined');
+  } else {
+    const { iss, assets, emb, exp, iat, key, log, nbf, sub } = payload;
+    return { iss, assets, emb, exp, iat, key, log, nbf, sub };
+  }
+}
+
 export async function NewClaim(token: string, keys: KeyStore = new KeyStore()): Promise<Claim> {
   const [headersRaw, payloadRaw] = token.split('.');
   const rawHeaders = JSON.parse(Buffer.from(headersRaw, 'base64url').toString()) as Headers;
-  const headers = await importHeaders(rawHeaders, keys);
-  const payload = JSON.parse(Buffer.from(payloadRaw, 'base64url').toString()) as Payload;
-  return new Claim(token, headers, payload);
+  const rawPayload = JSON.parse(Buffer.from(payloadRaw, 'base64url').toString()) as Payload;
+  return new Claim(token, await importHeaders(rawHeaders, keys), await importPayload(rawPayload));
 }
 
 
