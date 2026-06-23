@@ -47,7 +47,9 @@ class ClaimSet {
 
     // Build array of internal endorsements in correct order
     let endorsed = emblem.headers.kid;
-    while (endorsed !== root?.headers.jwk.kid) {
+    const seen = new Set<string>();
+    while (endorsed !== root?.headers.kid && !seen.has(endorsed)) {
+      seen.add(endorsed);
       if (endorsed in endorsedBy) {
         const by = endorsedBy[endorsed as string];
         internals.unshift(by);
@@ -55,7 +57,6 @@ class ClaimSet {
       } else {
         break;
       }
-      delete endorsedBy[endorsed as string]; // prevent cycles
     }
 
     if (root !== undefined) {
