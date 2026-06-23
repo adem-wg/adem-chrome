@@ -1,3 +1,0 @@
-- This repository contains a browser extension that checks whether the currently loaded page is marked with ADEM.
-- The implementation is outdated and not in sync with the current ADEM specification and Go implementation.
-- My vision for this repository is that it can be transformed into a npm module for verifying ADEM tokens.
