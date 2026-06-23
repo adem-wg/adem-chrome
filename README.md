@@ -3,7 +3,7 @@
 This package verifies ADEM tokens and can fetch ADEM token sets from DNS.
 
 ```ts
-import { fetchDnsTokens, verifyTokens } from 'adem-chrome';
+import { fetchDnsTokens, verifyTokens } from 'adem-js';
 
 const material = await fetchDnsTokens('emblem.felixlinker.de');
 const result = await verifyTokens([
