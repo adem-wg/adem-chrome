@@ -1,6 +1,14 @@
-import { decodeLeafInput, getSubjectAltNames, getStaticEntryCertificate } from './bin.js'
+import {
+  CertificateEntry,
+  decodeMerkleTreeLeaf as getMerkleTreeLeafCert,
+  getSubjectAltNames,
+  getTileLeafCert as getTileLeafCert,
+  PrecertificateEntry,
+} from './bin.js'
 import { fetchAllLogs, LogMap } from './logs.js'
 import type { LogPointer } from '../Claim.js'
+
+const STATIC_CT_TILE_WIDTH = 256;
 
 let logs: LogMap;
 function fetchLogs(): Promise<LogMap> {
@@ -50,7 +58,8 @@ interface EntriesResponse {
   entries: EntryResponse[]
 }
 
-function checkBinding(names: string[], iss: URL, keyHash: string): void {
+function checkBinding(cert: CertificateEntry | PrecertificateEntry, iss: URL, keyHash: string): void {
+  const names = getSubjectAltNames(cert.certificate);
   if (!(names.includes(`adem-configuration.${iss.host}`) || names.includes(iss.host))) {
     throw new Error('issuer not in certificate names');
   } else if (!(names.includes(`${keyHash}.adem-configuration.${iss.host}`))) {
@@ -85,8 +94,8 @@ export async function checkInclusionV1(logId: string, leafHash: string, iss: URL
           throw new Error('wrong number of certificates returned');
         }
 
-        const cert = decodeLeafInput(resp.entries[0].leaf_input)
-        checkBinding(getSubjectAltNames(cert), iss, keyHash);
+        const cert = getMerkleTreeLeafCert(resp.entries[0].leaf_input);
+        checkBinding(cert, iss, keyHash);
       });
   }
 }
@@ -110,10 +119,9 @@ function encodeTileNumber(n: number): string {
 }
 
 function staticDataTilePath(index: number, treeSize: number): string {
-  const tileWidth = 256;
-  const tileNumber = Math.floor(index / tileWidth);
-  const width = Math.min(tileWidth, treeSize - tileNumber * tileWidth);
-  const partial = width < tileWidth ? `.p/${width}` : '';
+  const tileNumber = Math.floor(index / STATIC_CT_TILE_WIDTH);
+  const width = Math.min(STATIC_CT_TILE_WIDTH, treeSize - tileNumber * STATIC_CT_TILE_WIDTH);
+  const partial = width < STATIC_CT_TILE_WIDTH ? `.p/${width}` : '';
   return `tile/data/${encodeTileNumber(tileNumber)}${partial}`;
 }
 
@@ -136,9 +144,10 @@ export async function checkInclusionStatic(logId: string, index: number, iss: UR
   }
 
   const tile = await logQuery(log.monitoring_url, staticDataTilePath(index, treeSize))
-    .then((resp) => resp.arrayBuffer());
-  const cert = getStaticEntryCertificate(tile, index);
-  checkBinding(getSubjectAltNames(cert), iss, keyHash);
+    .then((resp) => resp.arrayBuffer())
+    .then((buf) => new Uint8Array(buf));
+  const cert = getTileLeafCert(tile, index);
+  checkBinding(cert, iss, keyHash);
 }
 
 export async function checkLogPointer(

@@ -1,164 +1,148 @@
-import ASN1 from '@lapo/asn1js';
-import { toUint8Array, readUint24, readUint40, readUint16, readUint, readOpaque } from '../util/bytes.js';
+import {
+  BaseBlock,
+  ObjectIdentifier,
+  OctetString,
+  fromBER,
+  type AsnType,
+} from 'asn1js';
+import { readUint40, readUint16, readOpaque, decodeBase64 } from '../util/bytes.js';
 
-function certGetPath(cert: any, ...is: number[]): any {
-  return is.reduce((cert: any, i: number) => i < cert?.sub?.length ? cert.sub[i] : undefined, cert);
-}
+const SUBJECT_ALT_NAME_OID = '2.5.29.17';
+const CONTEXT_SPECIFIC_TAG_CLASS = 3;
+const DNS_NAME_TAG_NUMBER = 2;
+const textDecoder = new TextDecoder();
 
-export function decodeLeafInput(leaf_input: string | Uint8Array | ArrayBuffer): any {
-  const buf = toUint8Array(leaf_input);
-  let certificateOffset = 1   // version
-                        + 1   // leaf_type
-                        + 8   // timestamp
-                        + 2   // entry_type
-                        + 32; // issuer_key_hash
-  const tbsLength = readUint24(buf, certificateOffset);
-  certificateOffset += 3; // tbs_length
-  const certificateEnd = certificateOffset + tbsLength;
-  if (certificateEnd > buf.length) {
-    throw new Error('truncated CT leaf input');
-  }
-  return ASN1.decode(buf.subarray(certificateOffset, certificateEnd));
-}
-
-export function getSubjectAltNames(cert_der: unknown): string[] {
-  return findSubjectAltNames(parseCertificateOrTbs(cert_der));
-}
-
-function parseCertificateOrTbs(cert_der: unknown): any {
-  try {
-    const buf = toUint8Array(cert_der);
-    if (isLeafInput(buf)) {
-      return decodeLeafInput(buf);
-    } else {
-      const cert = ASN1.decode(buf);
-      return certGetPath(cert, 0, 0, 0)?.content() === '2' ? certGetPath(cert, 0) : cert;
-    }
-  } catch (err) {
-    // TODO: Is this the right error handling?
-    return cert_der;
-  }
-}
-
-function isLeafInput(buf: Uint8Array): boolean {
-  if (buf.length < 15 || buf[0] !== 0 || buf[1] !== 0) {
-    return false;
-  }
-
-  const entryType = readUint16(buf, 10);
-  const certificateLengthOffset = entryType === 0 ? 12 : entryType === 1 ? 44 : -1;
-  if (certificateLengthOffset < 0 || certificateLengthOffset + 3 > buf.length) {
-    return false;
-  }
-
-  const certificateLength = readUint24(buf, certificateLengthOffset);
-  return certificateLengthOffset + 3 + certificateLength <= buf.length;
-}
-
-export interface StaticLogEntry {
+export interface CertificateEntry {
+  type: 'certificate'
   certificate: Uint8Array
-  leafIndex?: number
 }
 
-function readStaticLeaf(buf: Uint8Array, offset: number): [StaticLogEntry, number] {
-  if (offset + 10 > buf.length) {
-    throw new Error('truncated static CT entry');
-  }
+export interface PrecertificateEntry {
+  type: 'precertificate'
+  certificate: Uint8Array
+}
 
-  let pos = offset + 8; // timestamp
-  const entryType = readUint16(buf, pos);
-  pos += 2;
+function readTimestampedEntry(buf: Uint8Array, offset: number): [CertificateEntry | PrecertificateEntry, number] {
+  let pos = offset + 8; // skip timestamps
+  let entryType: number;
+  [entryType, pos] = readUint16(buf, pos);
 
-  let certificate: Uint8Array;
-  let preCertificate: Uint8Array | undefined;
+  let signedEntry: CertificateEntry | PrecertificateEntry;
   if (entryType === 0) {
+    let certificate: Uint8Array;
     [certificate, pos] = readOpaque(buf, pos, 3);
+    signedEntry = { type: 'certificate', certificate };
   } else if (entryType === 1) {
-    pos += 32; // issuer_key_hash
+    pos = pos + 32; // skip issuer key hash
+    if (pos > buf.length) {
+      throw new Error('truncated CT issuer key hash');
+    }
+
+    let certificate: Uint8Array;
     [certificate, pos] = readOpaque(buf, pos, 3);
+    signedEntry = { type: 'precertificate', certificate };
   } else {
-    throw new Error(`unsupported static CT entry type ${entryType}`);
+    throw new Error(`unsupported CT entry type ${entryType}`);
   }
 
-  const [extensions, afterExtensions] = readOpaque(buf, pos, 2);
-  pos = afterExtensions;
-
-  if (entryType === 1) {
-    [preCertificate, pos] = readOpaque(buf, pos, 3);
-  }
-
-  const [fingerprints, afterFingerprints] = readOpaque(buf, pos, 2);
-  pos = afterFingerprints;
-
-  if (fingerprints.length % 32 !== 0) {
-    throw new Error('invalid static CT chain fingerprints');
-  }
-
-  return [{
-    certificate: preCertificate || certificate,
-    leafIndex: parseStaticLeafIndex(extensions),
-  }, pos];
+  let extensions: Uint8Array;
+  [extensions, pos] = readOpaque(buf, pos, 2);
+  return [signedEntry, pos];
 }
 
-function parseStaticLeafIndex(extensions: Uint8Array): number | undefined {
-  if (extensions.length === 0) {
-    return undefined;
+export function decodeMerkleTreeLeaf(leafInput: string): CertificateEntry | PrecertificateEntry {
+  const buf = decodeBase64(leafInput);
+  if (buf.length < 2 || buf[0] !== 0) {
+    throw new Error('unsupported CT leaf version');
+  } else if (buf[1] !== 0) {
+    throw new Error(`unsupported CT leaf type ${buf[1]}`);
   }
 
-  let pos = 0;
-  while (pos < extensions.length) {
-    if (pos + 3 > extensions.length) {
-      throw new Error('invalid static CT extensions');
-    }
-    const extensionType = extensions[pos];
-    const [extension, afterExtension] = readOpaque(extensions, pos + 1, 2);
-    pos = afterExtension;
-
-    if (extensionType === 0) {
-      if (extension.length !== 5) {
-        throw new Error('invalid static CT leaf index extension');
-      }
-      return readUint40(extension, 0);
-    }
+  const [ cert, end] = readTimestampedEntry(buf, 2);
+  if (end !== buf.length) {
+    throw new Error('trailing data in CT leaf input');
   }
-
-  return undefined;
+  return cert;
 }
 
-export function getStaticEntryCertificate(tile: ArrayBuffer | Uint8Array, index: number): Uint8Array {
-  const buf = tile instanceof Uint8Array ? tile : new Uint8Array(tile);
+export function getSubjectAltNames(cert_der: Uint8Array): string[] {
+  return findSubjectAltNames(decodeAsn1(cert_der));
+}
+
+function decodeAsn1(buf: Uint8Array): AsnType {
+  const decoded = fromBER(buf);
+  if (decoded.offset === -1 || decoded.offset !== buf.length) {
+    throw new Error(decoded.result.error || 'invalid ASN.1 data');
+  }
+  return decoded.result;
+}
+
+function readTileLeaf(buf: Uint8Array, offset: number): [CertificateEntry | PrecertificateEntry, number] {
+  const [cert, afterTimestampedEntry] = readTimestampedEntry(buf, offset);
+  let pos = afterTimestampedEntry;
+
+  if (cert.type === 'precertificate') {
+    [, pos] = readOpaque(buf, pos, 3);
+  }
+  [, pos] = readOpaque(buf, pos, 2);
+
+  return [cert, pos];
+}
+
+export function getTileLeafCert(tile: Uint8Array, index: number): CertificateEntry | PrecertificateEntry {
   let pos = 0;
-  while (pos < buf.length) {
-    const [entry, next] = readStaticLeaf(buf, pos);
-    if (entry.leafIndex === index) {
-      return entry.certificate;
+  const tileLeafIndex = index % 256;
+  for (let i = 0; i <= tileLeafIndex && pos < tile.length; i++) {
+    const [cert, next] = readTileLeaf(tile, pos);
+    if (i == tileLeafIndex) {
+      return cert;
+    } else {
+      pos = next;
     }
-    pos = next;
   }
 
   throw new Error(`static CT entry ${index} not found in tile`);
 }
 
-function findSubjectAltNames(cert: any): string[] {
-  if (certGetPath(cert, 0, 0)?.content() !== '2') {
+function getChildren(node: AsnType): AsnType[] {
+  const valueBlock = node.valueBlock as { value?: unknown } | undefined;
+  return Array.isArray(valueBlock?.value)
+    ? valueBlock.value.filter((val) => val instanceof BaseBlock)
+    : [];
+}
+
+function getSubjectAltNameValues(node: AsnType): OctetString[] {
+  const children = getChildren(node);
+  const values: OctetString[] = [];
+
+  if (children[0] instanceof ObjectIdentifier
+      && children[0].getValue() === SUBJECT_ALT_NAME_OID) {
+    const value = children.find((child) => child instanceof OctetString);
+    if (value instanceof OctetString) {
+      values.push(value);
+    }
+  }
+
+  for (const child of children) {
+    values.push(...getSubjectAltNameValues(child));
+  }
+  return values;
+}
+
+function findSubjectAltNames(cert: AsnType | undefined): string[] {
+  if (!cert) {
     return [];
   }
 
-  // Extensions could be stored at any of these indices
-  let altNames: string[] = [];
-  // These indices come from https://www.rfc-editor.org/rfc/rfc5280#section-4.1
-  for (const i of [7,8,9]) {
-    const field = certGetPath(cert, i);
-    // field with tag number 3 are the x509 extensions
-    if (field?.tag.tagNumber === 3) {
-      for (const seq of certGetPath(field, 0).sub) {
-        const [ident, value] = seq.sub;
-        // Search for right extension field...
-        if (ident.content() === '2.5.29.17\nsubjectAltName\nX.509 extension') {
-          for(const sub of certGetPath(value, 0).sub) {
-            const [_, altName] = sub.content().split('\n');
-            altNames.push(altName);
-          }
+  const altNames: string[] = [];
+  for (const extension of getSubjectAltNameValues(cert)) {
+    const generalNames = decodeAsn1(new Uint8Array(extension.getValue()));
+    for (const name of getChildren(generalNames)) {
+      if (name.idBlock.tagClass === CONTEXT_SPECIFIC_TAG_CLASS
+          && name.idBlock.tagNumber === DNS_NAME_TAG_NUMBER) {
+        const valueBlock = name.valueBlock as { valueHexView?: Uint8Array };
+        if (valueBlock.valueHexView) {
+          altNames.push(textDecoder.decode(valueBlock.valueHexView));
         }
       }
     }
