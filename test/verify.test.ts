@@ -25,6 +25,7 @@ describe('static deployment verification fixtures', () => {
     expect(material.keys).toHaveLength(3);
     const result = await verifyFixture('emblem.felixlinker.de');
     expect(result.results).not.toContain(VerificationResult.INVALID);
+    expect(result.errors).toEqual([]);
     expect(result.protected).toEqual(['[2a01:4f9:c010:d8e4::1]']);
     expect(result.issuer).toBe('https://emblem.felixlinker.de');
   });
@@ -35,6 +36,7 @@ describe('static deployment verification fixtures', () => {
     expect(material.keys).toHaveLength(0);
     const result = await verifyFixture('emblem.redcross.org.uk');
     expect(result.results).not.toContain(VerificationResult.INVALID);
+    expect(result.errors).toEqual([]);
     expect(result.protected).toEqual(['adem.redcross.org.uk']);
     expect(result.issuer).toBe('https://redcross.org.uk');
   });
@@ -45,6 +47,7 @@ describe('static deployment verification fixtures', () => {
     expect(material.keys).toHaveLength(2);
     const result = await verifyFixture('cyberstar.online');
     expect(result.results).not.toContain(VerificationResult.INVALID);
+    expect(result.errors).toEqual([]);
     expect(result.protected).toEqual([
       '[185.230.63.171]',
       '[185.230.63.107]',
@@ -52,5 +55,53 @@ describe('static deployment verification fixtures', () => {
       'cyberstar.online',
     ]);
     expect(result.issuer).toBe('https://cyberstar.online');
+  });
+
+  test('accumulates token parsing errors', async () => {
+    const result = await verifyTokens(['not-a-token', 'also-not-a-token']);
+
+    expect(result.results).toEqual([VerificationResult.INVALID]);
+    expect(result.errors).toHaveLength(3);
+    expect(result.errors[2]).toBe('token set must contain exactly one emblem');
+  });
+
+  test('keeps verified emblem result when extra tokens are invalid', async () => {
+    const material = parseTXTRecords(loadDigFixture('cyberstar.online'));
+    const result = await verifyTokens(
+      [...material.tokens, ...material.keys.map((key) => JSON.stringify(key)), 'not-a-token'],
+      [],
+      { ctVerifier: acceptFixtureCT },
+    );
+
+    expect(result.results).toContain(VerificationResult.INVALID);
+    expect(result.results).toContain(VerificationResult.SIGNED);
+    expect(result.errors).toHaveLength(1);
+    expect(result.protected).toEqual([
+      '[185.230.63.171]',
+      '[185.230.63.107]',
+      '[185.230.63.186]',
+      'cyberstar.online',
+    ]);
+  });
+
+  test('filters invalid external endorsements from the verified claim set', async () => {
+    const material = parseTXTRecords(loadDigFixture('emblem.felixlinker.de'));
+    const result = await verifyTokens(
+      [...material.tokens, ...material.keys.map((key) => JSON.stringify(key))],
+      [],
+      {
+        ctVerifier: async (_logs, issuer) => {
+          if (issuer === 'https://auth.felixlinker.de') {
+            throw new Error('external CT failure');
+          }
+        },
+      },
+    );
+
+    expect(result.results).toContain(VerificationResult.INVALID);
+    expect(result.results).toContain(VerificationResult.SIGNED);
+    expect(result.results).not.toContain(VerificationResult.ENDORSED);
+    expect(result.errors).toContain('external CT failure');
+    expect(result.endorsedBy).toEqual([]);
   });
 });

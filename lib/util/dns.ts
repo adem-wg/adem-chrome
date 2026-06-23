@@ -42,14 +42,14 @@ function parseTXT(resp: GoogleDNSResponse[]): DNSResponse[] {
   }));
 }
 
-export function queryTXT(host: string) {
+export function queryTXT(host: string): Promise<DNSResponse[]> {
   return dnsQuery(host, 'TXT').then(parseTXT);
 }
 
-export function queryA(host: string) {
+export function queryA(host: string): Promise<(ipaddr.IPv4 | ipaddr.IPv6)[]> {
   return dnsQuery(host, 'A').then(parseALike);
 }
 
-export function queryAAAA(host: string) {
+export function queryAAAA(host: string): Promise<(ipaddr.IPv4 | ipaddr.IPv6)[]> {
   return dnsQuery(host, 'AAAA').then(parseALike);
 }

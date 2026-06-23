@@ -21,3 +21,9 @@ npm test
 
 Tests use static DNS fixtures and make no DNS or Certificate Transparency
 requests.
+
+Run the live Certificate Transparency checks with:
+
+```sh
+npm run test:live
+```

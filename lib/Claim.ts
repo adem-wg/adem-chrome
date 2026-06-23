@@ -7,14 +7,15 @@ import { KeyStore } from './keys/keys.js';
 export interface Headers {
   alg: string
   jwk: JWK
+  kid: string
   cty: string
 }
 
 interface RawHeaders {
-  alg: string
+  alg?: string
   jwk?: JWK
   kid?: string
-  cty: string
+  cty?: string
 }
 
 export interface LogPointer {
@@ -25,16 +26,15 @@ export interface LogPointer {
 }
 
 export interface Payload {
-  ver: string
-  iss: string
+  iss?: string
   assets?: string[]
   sub?: string
   log?: LogPointer[]
   key?: string
   emb?: Constraints
-  iat: number
-  nbf: number
-  exp: number
+  iat?: number
+  nbf?: number
+  exp?: number
 }
 
 export interface VerifyOptions {
@@ -51,38 +51,36 @@ function importKey(key: JWK | undefined): Promise<KeyLike | Uint8Array> {
   }
 }
 
-async function resolveHeaderKey(rawHeaders: RawHeaders, keys: KeyStore): Promise<JWK> {
-  if (rawHeaders.jwk !== undefined) {
-    const kid = await calculateKid(rawHeaders.jwk);
-    if (rawHeaders.kid !== undefined && rawHeaders.kid !== kid) {
-      throw new Error('header kid does not match jwk');
+async function importHeaders(headers: RawHeaders, keys: KeyStore): Promise<Headers> {
+  if (headers.alg === undefined) {
+    throw new Error('headers miss signing algorithm');
+  } else if (headers.cty !== 'adem-end' && headers.cty !== 'adem-emb') {
+    throw new Error('headers contain wrong cty');
+  } else {
+    let jwk: JWK | undefined;
+    if (headers.kid !== undefined) {
+      jwk = keys.get(headers.kid)
+    } else {
+      jwk = headers.jwk
     }
-    return Object.assign({}, rawHeaders.jwk, { alg: rawHeaders.alg, kid });
-  }
 
-  if (rawHeaders.kid !== undefined) {
-    const jwk = keys.get(rawHeaders.kid);
-    if (jwk !== undefined) {
-      return Object.assign({}, jwk, { alg: rawHeaders.alg, kid: rawHeaders.kid });
+    if (jwk === undefined) {
+      throw new Error('headers do not identify verification key')
+    } else {
+      const kid = await calculateKid(jwk);
+      return { jwk, kid, cty: headers.cty, alg: headers.alg };
     }
   }
-
-  throw new Error('no verification key');
 }
 
 export async function NewClaim(token: string, keys: KeyStore = new KeyStore()): Promise<Claim> {
   const [headersRaw, payloadRaw] = token.split('.');
-  const rawHeaders = JSON.parse(Buffer.from(headersRaw, 'base64url').toString()) as RawHeaders;
+  const rawHeaders = JSON.parse(Buffer.from(headersRaw, 'base64url').toString()) as Headers;
+  const headers = await importHeaders(rawHeaders, keys);
   const payload = JSON.parse(Buffer.from(payloadRaw, 'base64url').toString()) as Payload;
-
-  const jwk = await resolveHeaderKey(rawHeaders, keys);
-  const headers: Headers = { alg: rawHeaders.alg, cty: rawHeaders.cty, jwk };
-  const isRoot = payload.log !== undefined;
-  const endorses = headers.cty === 'adem-end' ? payload.key : undefined;
-  return new Claim(token, headers, payload, isRoot, endorses);
+  return new Claim(token, headers, payload);
 }
 
-export const parseToken = NewClaim;
 
 /**
  * Parses an ADEM claim which can be both an emblem or an endorsement.
@@ -94,32 +92,18 @@ class Claim {
   headers: Headers;
   /** Decoded payload */
   payload: Payload;
-  /** True if this claim is an endorsement signed by a root key. */
-  isRoot: boolean;
-  /** Which key is endorsed by this claim? If null, this claim is an emblem. */
-  endorses?: string;
   /** Endorsement/emblem constraints.
    * When emblem, contains assets marked as protected. */
   constraints?: ConstraintSet;
 
-  constructor(token: string, headers: Headers, payload: Payload, isRoot?: boolean, endorses?: string) {
-    if (headers.jwk.kid === undefined) {
-      throw new Error('header key misses kid');
-    }
-
+  constructor(token: string, headers: Headers, payload: Payload) {
     this.token = token;
     this.headers = headers;
     this.payload = payload;
-    this.isRoot = isRoot !== undefined && isRoot;
-    if (endorses === undefined) {
-      if (this.payload.assets === undefined) {
-        throw new Error('emblem must mark assets');
-      }
-      this.constraints = new ConstraintSet(
-        { ...this.payload.emb, assets: this.payload.assets }
-      );
+
+    if (this.headers.cty === undefined) {
+      this.constraints = new ConstraintSet({ ...this.payload.emb, assets: this.payload.assets });
     } else {
-      this.endorses = endorses;
       this.constraints = new ConstraintSet(this.payload.emb || {});
     }
   }
@@ -127,36 +111,43 @@ class Claim {
   async verify(keys: KeyStore, options: VerifyOptions = {}): Promise<void> {
     const key = await this.getVerificationKey(keys, options);
     await jwtVerify(this.token, key as KeyLike);
-    if (this.endorses !== undefined) {
-      keys.setAuthenticated(this.endorses);
+    if (this.payload.key !== undefined) {
+      keys.setAuthenticated(this.payload.key);
     }
   }
 
   async getVerificationKey(keys: KeyStore, options: VerifyOptions): Promise<KeyLike | Uint8Array> {
-    if (this.isRoot) {
-      if (!this.payload.log?.length) {
-        throw new Error('root endorsement verification requires log pointers');
-      }
-
-      if (options.ctVerifier !== undefined) {
-        await options.ctVerifier(this.payload.log, this.payload.iss, this.headers.jwk);
+    const commitments = this.commitments();
+    const iss = this.payload.iss;
+    if (commitments !== undefined && commitments.length > 0) {
+      if (iss === undefined) {
+        throw new Error('root endorsement requires issuer');
       } else {
-        await Promise.all(this.payload.log.map((log) =>
-          checkLogPointer(log, new URL(this.payload.iss), this.headers.jwk.kid as string)
-        ));
+        if (options.ctVerifier !== undefined) {
+          await options.ctVerifier(commitments, iss, this.headers.jwk);
+        } else {
+          await Promise.all(commitments.map((log) => checkLogPointer(log, new URL(iss), this.headers.kid)));
+        }
       }
     } else {
-      const kid = this.headers.jwk.kid as string;
-      if (!keys.isAuthenticated(kid)) {
-        throw new Error(`no key with kid ${kid}`);
+      if (!keys.isAuthenticated(this.headers.kid)) {
+        throw new Error(`could not authenticate key ${this.headers.kid}`);
       }
     }
 
     return importKey(this.headers.jwk);
   }
 
+  commitments(): (LogPointer[] | undefined) {
+    return this.payload.log;
+  }
+
+  endorsesKey(): (string | undefined) {
+    return this.payload.key;
+  }
+
   async marks(ip: IP): Promise<boolean> {
-    if (this.endorses !== undefined) {
+    if (this.payload.key !== undefined) {
       // Endorsements don't mark anything as protected
       return false;
     } else if (this.constraints?.assets === undefined) {

@@ -30,8 +30,28 @@ function parseCertificateOrTbs(cert_der: string | Buffer | any): any {
     return cert_der;
   }
 
-  const cert = ASN1.decode(typeof cert_der === 'string' ? Buffer.from(cert_der, 'base64') : cert_der);
+  const buf = typeof cert_der === 'string' ? Buffer.from(cert_der, 'base64') : cert_der;
+  if (isLeafInput(buf)) {
+    return decodeLeafInput(buf.toString('base64'));
+  }
+
+  const cert = ASN1.decode(buf);
   return certGetPath(cert, 0, 0, 0)?.content() === '2' ? certGetPath(cert, 0) : cert;
+}
+
+function isLeafInput(buf: Buffer): boolean {
+  if (buf.length < 15 || buf[0] !== 0 || buf[1] !== 0) {
+    return false;
+  }
+
+  const entryType = buf.readUInt16BE(10);
+  const certificateLengthOffset = entryType === 0 ? 12 : entryType === 1 ? 44 : -1;
+  if (certificateLengthOffset < 0 || certificateLengthOffset + 3 > buf.length) {
+    return false;
+  }
+
+  const certificateLength = readUint24(buf, certificateLengthOffset);
+  return certificateLengthOffset + 3 + certificateLength <= buf.length;
 }
 
 export interface StaticLogEntry {

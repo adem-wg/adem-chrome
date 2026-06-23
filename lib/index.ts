@@ -1,11 +1,9 @@
-export { default as Claim, NewClaim, parseToken } from './Claim.js';
+export { default as Claim } from './Claim.js';
 export type { Headers, LogPointer, Payload, VerifyOptions } from './Claim.js';
 export { default as ClaimSet } from './ClaimSet.js';
 export { AI, ConstraintSet } from './Constraints.js';
 export type { Constraints, IP } from './Constraints.js';
 export { calculateKid } from './keys/hash.js';
-export { KeyStore } from './keys/keys.js';
 export { fetchDnsTokens, parseTXTRecords } from './parsing.js';
 export type { DNSMaterial, TXTRecord } from './parsing.js';
-export { verifyTokens, VerificationResult } from './verify.js';
-export type { VerificationResults } from './verify.js';
+export { verifyTokens, VerificationResult, VerificationResults } from './verify.js';
