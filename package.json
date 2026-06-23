@@ -10,11 +10,15 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "jest",
     "test:live": "ADEM_LIVE_CT_TESTS=1 jest test/live-ct.test.ts --runInBand"
   },
