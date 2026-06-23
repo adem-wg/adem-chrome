@@ -6,4 +6,5 @@ export type { Constraints, IP } from './Constraints.js';
 export { calculateKid } from './keys/hash.js';
 export { fetchDnsTokens, parseTXTRecords } from './parsing.js';
 export type { DNSMaterial, TXTRecord } from './parsing.js';
-export { verifyTokens, VerificationResult, VerificationResults } from './verify.js';
+export { verifyTokens, VerificationResult } from './verify.js';
+export type { VerificationResults } from './verify.js';
