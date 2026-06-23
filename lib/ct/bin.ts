@@ -1,50 +1,51 @@
 import ASN1 from '@lapo/asn1js';
-import jDataView from 'jdataview';
+import { toUint8Array, readUint24, readUint40, readUint16, readUint, readOpaque } from '../util/bytes.js';
 
 function certGetPath(cert: any, ...is: number[]): any {
   return is.reduce((cert: any, i: number) => i < cert?.sub?.length ? cert.sub[i] : undefined, cert);
 }
 
-export function decodeLeafInput(leaf_input: string): any {
-  const buf = Buffer.from(leaf_input, 'base64');
-  const view = new jDataView(buf);
-  view.skip(1);  // version
-  view.skip(1);  // leaf_type
-  view.skip(8);  // timestamp
-  view.skip(2);  // entry_type
-  view.skip(32); // issuer_key_hash
-
-  // Calculate length of tbs_certificate
-  const uint32 = new Uint8Array(4);
-  uint32.set(view.getBytes(3), 1); // read length field
-  const tbsLength = new DataView(uint32.buffer, 0).getUint32(0, false)
-  return ASN1.decode(view.getBytes(tbsLength)); // read tbs_certificate
+export function decodeLeafInput(leaf_input: string | Uint8Array | ArrayBuffer): any {
+  const buf = toUint8Array(leaf_input);
+  let certificateOffset = 1   // version
+                        + 1   // leaf_type
+                        + 8   // timestamp
+                        + 2   // entry_type
+                        + 32; // issuer_key_hash
+  const tbsLength = readUint24(buf, certificateOffset);
+  certificateOffset += 3; // tbs_length
+  const certificateEnd = certificateOffset + tbsLength;
+  if (certificateEnd > buf.length) {
+    throw new Error('truncated CT leaf input');
+  }
+  return ASN1.decode(buf.subarray(certificateOffset, certificateEnd));
 }
 
-export function getSubjectAltNames(cert_der: string | Buffer | any): string[] {
+export function getSubjectAltNames(cert_der: unknown): string[] {
   return findSubjectAltNames(parseCertificateOrTbs(cert_der));
 }
 
-function parseCertificateOrTbs(cert_der: string | Buffer | any): any {
-  if (!(Buffer.isBuffer(cert_der) || typeof cert_der === 'string')) {
+function parseCertificateOrTbs(cert_der: unknown): any {
+  try {
+    const buf = toUint8Array(cert_der);
+    if (isLeafInput(buf)) {
+      return decodeLeafInput(buf);
+    } else {
+      const cert = ASN1.decode(buf);
+      return certGetPath(cert, 0, 0, 0)?.content() === '2' ? certGetPath(cert, 0) : cert;
+    }
+  } catch (err) {
+    // TODO: Is this the right error handling?
     return cert_der;
   }
-
-  const buf = typeof cert_der === 'string' ? Buffer.from(cert_der, 'base64') : cert_der;
-  if (isLeafInput(buf)) {
-    return decodeLeafInput(buf.toString('base64'));
-  }
-
-  const cert = ASN1.decode(buf);
-  return certGetPath(cert, 0, 0, 0)?.content() === '2' ? certGetPath(cert, 0) : cert;
 }
 
-function isLeafInput(buf: Buffer): boolean {
+function isLeafInput(buf: Uint8Array): boolean {
   if (buf.length < 15 || buf[0] !== 0 || buf[1] !== 0) {
     return false;
   }
 
-  const entryType = buf.readUInt16BE(10);
+  const entryType = readUint16(buf, 10);
   const certificateLengthOffset = entryType === 0 ? 12 : entryType === 1 ? 44 : -1;
   if (certificateLengthOffset < 0 || certificateLengthOffset + 3 > buf.length) {
     return false;
@@ -55,43 +56,21 @@ function isLeafInput(buf: Buffer): boolean {
 }
 
 export interface StaticLogEntry {
-  certificate: Buffer
+  certificate: Uint8Array
   leafIndex?: number
 }
 
-function readUint24(buf: Buffer, offset: number): number {
-  return buf.readUIntBE(offset, 3);
-}
-
-function readUint40(buf: Buffer, offset: number): number {
-  return buf.readUIntBE(offset, 5);
-}
-
-function readOpaque(buf: Buffer, offset: number, lengthBytes: 2 | 3): [Buffer, number] {
-  if (offset + lengthBytes > buf.length) {
-    throw new Error('truncated static CT entry');
-  }
-
-  const length = lengthBytes === 2 ? buf.readUInt16BE(offset) : readUint24(buf, offset);
-  const start = offset + lengthBytes;
-  const end = start + length;
-  if (end > buf.length) {
-    throw new Error('truncated static CT entry');
-  }
-  return [buf.subarray(start, end), end];
-}
-
-function readStaticLeaf(buf: Buffer, offset: number): [StaticLogEntry, number] {
+function readStaticLeaf(buf: Uint8Array, offset: number): [StaticLogEntry, number] {
   if (offset + 10 > buf.length) {
     throw new Error('truncated static CT entry');
   }
 
   let pos = offset + 8; // timestamp
-  const entryType = buf.readUInt16BE(pos);
+  const entryType = readUint16(buf, pos);
   pos += 2;
 
-  let certificate: Buffer;
-  let preCertificate: Buffer | undefined;
+  let certificate: Uint8Array;
+  let preCertificate: Uint8Array | undefined;
   if (entryType === 0) {
     [certificate, pos] = readOpaque(buf, pos, 3);
   } else if (entryType === 1) {
@@ -121,7 +100,7 @@ function readStaticLeaf(buf: Buffer, offset: number): [StaticLogEntry, number] {
   }, pos];
 }
 
-function parseStaticLeafIndex(extensions: Buffer): number | undefined {
+function parseStaticLeafIndex(extensions: Uint8Array): number | undefined {
   if (extensions.length === 0) {
     return undefined;
   }
@@ -131,7 +110,7 @@ function parseStaticLeafIndex(extensions: Buffer): number | undefined {
     if (pos + 3 > extensions.length) {
       throw new Error('invalid static CT extensions');
     }
-    const extensionType = extensions.readUInt8(pos);
+    const extensionType = extensions[pos];
     const [extension, afterExtension] = readOpaque(extensions, pos + 1, 2);
     pos = afterExtension;
 
@@ -146,8 +125,8 @@ function parseStaticLeafIndex(extensions: Buffer): number | undefined {
   return undefined;
 }
 
-export function getStaticEntryCertificate(tile: ArrayBuffer | Buffer, index: number): Buffer {
-  const buf = Buffer.isBuffer(tile) ? tile : Buffer.from(tile);
+export function getStaticEntryCertificate(tile: ArrayBuffer | Uint8Array, index: number): Uint8Array {
+  const buf = tile instanceof Uint8Array ? tile : new Uint8Array(tile);
   let pos = 0;
   while (pos < buf.length) {
     const [entry, next] = readStaticLeaf(buf, pos);

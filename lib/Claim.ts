@@ -3,6 +3,7 @@ import { Constraints, ConstraintSet, IP } from './Constraints.js';
 import { checkLogPointer } from './ct/api.js';
 import { calculateKid } from './keys/hash.js';
 import { KeyStore } from './keys/keys.js';
+import { decodeBase64UrlText } from './util/bytes.js';
 
 export interface Headers {
   alg: string
@@ -96,8 +97,8 @@ async function importPayload(payload: RawPayload): Promise<Payload> {
 
 export async function NewClaim(token: string, keys: KeyStore = new KeyStore()): Promise<Claim> {
   const [headersRaw, payloadRaw] = token.split('.');
-  const rawHeaders = JSON.parse(Buffer.from(headersRaw, 'base64url').toString()) as Headers;
-  const rawPayload = JSON.parse(Buffer.from(payloadRaw, 'base64url').toString()) as Payload;
+  const rawHeaders = JSON.parse(decodeBase64UrlText(headersRaw)) as Headers;
+  const rawPayload = JSON.parse(decodeBase64UrlText(payloadRaw)) as Payload;
   return new Claim(token, await importHeaders(rawHeaders, keys), await importPayload(rawPayload));
 }
 
