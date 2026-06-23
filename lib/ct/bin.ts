@@ -147,7 +147,7 @@ function parseStaticLeafIndex(extensions: Buffer): number | undefined {
 }
 
 export function getStaticEntryCertificate(tile: ArrayBuffer | Buffer, index: number): Buffer {
-  const buf = Buffer.from(tile);
+  const buf = Buffer.isBuffer(tile) ? tile : Buffer.from(tile);
   let pos = 0;
   while (pos < buf.length) {
     const [entry, next] = readStaticLeaf(buf, pos);

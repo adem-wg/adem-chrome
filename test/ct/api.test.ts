@@ -66,7 +66,7 @@ describe('static CT API verification', () => {
       }
 
       if (url === 'https://static.example/log/tile/data/001.p/58') {
-        return Promise.resolve(new Response(tile));
+        return Promise.resolve(new Response(Uint8Array.from(tile)));
       }
 
       return Promise.reject(new Error(`unexpected URL ${url}`));
